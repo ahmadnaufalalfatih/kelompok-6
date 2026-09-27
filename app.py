@@ -8,9 +8,11 @@ import joblib
 @st.cache_resource
 def load_resources():
     model = joblib.load('random_forest_model.pkl')
-    feature_cols = joblib.load('feature_columns.pkl')
+    # feature_columns.pkl berisi daftar akhir kolom fitur yang digunakan oleh model dan scaler.
+    feature_columns = joblib.load('feature_columns.pkl')
+    # Scaler ini dilatih pada SEMUA feature_columns, bukan hanya numerik.
     scaler = joblib.load('min_max_scaler.pkl')
-    return model, feature_cols, scaler
+    return model, feature_columns, scaler
 
 # Memuat sumber daya
 model, feature_columns, scaler = load_resources()
@@ -33,7 +35,7 @@ column_descriptions = {
     "Digital_Banking_Usage": "Tingkat penggunaan layanan perbankan digital (skala 1-10).",
     "Religious_Knowledge": "Tingkat pengetahuan agama (skala 1-10).",
     "Halal_Finance_Awareness": "Tingkat kesadaran akan keuangan halal (skala 1-10).",
-    "Gender": "Jenis kelamin responden (Pria/Wanita).",
+    "Gender": "Jenis kelamin responden (Male/Female).", # Opsi telah diperbaiki
     "Education": "Tingkat pendidikan responden (Bachelor, Diploma, High School, Postgraduate).",
     "Sharia_Banking_Interest": "Tingkat minat terhadap perbankan syariah (High, Medium, Low)."
 }
@@ -68,50 +70,50 @@ with col3:
 
 # Tombol untuk prediksi
 if st.button("Prediksi Tujuan Keuangan"):
-    # Menyiapkan data input
-    input_data = {
-        "Age": age,
-        "Monthly_Income": monthly_income,
-        "Monthly_Expenses": monthly_expenses,
-        "Islamic_Financial_Literacy": islamic_financial_literacy,
-        "Sharia_Awareness": sharia_awareness,
-        "Conventional_Bank_Usage": conventional_bank_usage,
-        "Digital_Banking_Usage": digital_banking_usage,
-        "Religious_Knowledge": religious_knowledge,
-        "Halal_Finance_Awareness": halal_finance_awareness,
-        # Menggunakan 0/1 untuk fitur biner (Gender_1: Female=1, Male=0)
-        "Gender_1": 1 if gender == "Female" else 0, 
-        # Menggunakan 0/1 untuk fitur Education (drop_first=True)
-        "Education_Diploma": 1 if education == "Diploma" else 0,
-        "Education_High School": 1 if education == "High School" else 0,
-        "Education_Postgraduate": 1 if education == "Postgraduate" else 0,
-        # Menggunakan 0/1 untuk fitur Sharia_Banking_Interest (one-hot encoding)
-        "Sharia_Banking_Interest_High": 1 if sharia_banking_interest == "High" else 0,
-        "Sharia_Banking_Interest_Low": 1 if sharia_banking_interest == "Low" else 0,
-        "Sharia_Banking_Interest_Medium": 1 if sharia_banking_interest == "Medium" else 0
-    }
+    # Membuat kamus untuk menyimpan semua fitur, termasuk variabel dummy
+    # Menginisialisasi semua variabel dummy ke 0 terlebih dahulu
+    processed_input_data = {col: 0 for col in feature_columns}
 
-    # Membuat DataFrame dari input
-    input_df = pd.DataFrame([input_data])
+    # Mengisi fitur numerik
+    processed_input_data["Age"] = age
+    processed_input_data["Monthly_Income"] = monthly_income
+    processed_input_data["Monthly_Expenses"] = monthly_expenses
+    processed_input_data["Islamic_Financial_Literacy"] = islamic_financial_literacy
+    processed_input_data["Sharia_Awareness"] = sharia_awareness
+    processed_input_data["Conventional_Bank_Usage"] = conventional_bank_usage
+    processed_input_data["Digital_Banking_Usage"] = digital_banking_usage
+    processed_input_data["Religious_Knowledge"] = religious_knowledge
+    processed_input_data["Halal_Finance_Awareness"] = halal_finance_awareness
 
-    # Mendefinisikan fitur numerik yang akan diskalakan (sesuai dengan training model)
-    numeric_features_in_model = ['Age', 'Monthly_Income', 'Monthly_Expenses', 'Islamic_Financial_Literacy',
-                               'Sharia_Awareness', 'Conventional_Bank_Usage', 'Digital_Banking_Usage',
-                               'Religious_Knowledge', 'Halal_Finance_Awareness']
+    # Mengisi fitur kategori yang sudah di-one-hot encode secara manual
+    # Gender (Gender_1 untuk Female, Male adalah base case 0)
+    if gender == "Female":
+        processed_input_data["Gender_1"] = 1
+    # Education (sesuai dengan drop_first=True saat preprocessing)
+    if education == "Diploma":
+        processed_input_data["Education_Diploma"] = 1
+    elif education == "High School":
+        processed_input_data["Education_High School"] = 1
+    elif education == "Postgraduate":
+        processed_input_data["Education_Postgraduate"] = 1
+    # Sharia_Banking_Interest (sesuai dengan one-hot encoding)
+    if sharia_banking_interest == "High":
+        processed_input_data["Sharia_Banking_Interest_High"] = 1
+    elif sharia_banking_interest == "Low":
+        processed_input_data["Sharia_Banking_Interest_Low"] = 1
+    elif sharia_banking_interest == "Medium":
+        processed_input_data["Sharia_Banking_Interest_Medium"] = 1
 
-    # Menerapkan scaling pada fitur numerik menggunakan scaler yang sudah dilatih
-    input_df[numeric_features_in_model] = scaler.transform(input_df[numeric_features_in_model])
+    # Membuat DataFrame dari data input yang telah diproses, memastikan urutan kolom sesuai
+    input_df_processed = pd.DataFrame([processed_input_data], columns=feature_columns)
 
-    # Memastikan urutan kolom sesuai dengan feature_columns yang digunakan saat training
-    processed_input = pd.DataFrame(columns=feature_columns)
-    for col in feature_columns:
-        if col in input_df.columns:
-            processed_input[col] = input_df[col]
-        else:
-            processed_input[col] = 0  # Mengisi dengan 0 untuk variabel dummy yang hilang (jika ada)
+    # Menerapkan scaling pada SELURUH DataFrame input yang telah diproses
+    # Scaler dilatih pada semua feature_columns, jadi ia mengharapkan semuanya.
+    scaled_input_array = scaler.transform(input_df_processed)
+    scaled_input_df = pd.DataFrame(scaled_input_array, columns=feature_columns)
 
     # Melakukan prediksi menggunakan model
-    prediction = model.predict(processed_input)
+    prediction = model.predict(scaled_input_df)
 
     # Menampilkan hasil prediksi
     st.subheader("Hasil Prediksi")
@@ -121,4 +123,5 @@ if st.button("Prediksi Tujuan Keuangan"):
 st.subheader("Deskripsi Kolom")
 for col, desc in column_descriptions.items():
     st.markdown(f"**{col}**: {desc}")
+
 
